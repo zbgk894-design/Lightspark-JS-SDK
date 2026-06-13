@@ -1,0 +1,253 @@
+---
+title: "Quickstart"
+description: "Send your first cross-border payment"
+icon: "/images/icons/rocket.svg"
+"og:image": "/images/og/og-global-p2p.png"
+---
+import { remittanceProductName } from '/snippets/variables.mdx'
+
+<img 
+  src="/images/heroes/hero-quickstart-globalp2p-light.jpg" 
+  alt="Global P2P quickstart hero"
+  className="page-hero block dark:hidden"
+/>
+<img 
+  src="/images/heroes/hero-quickstart-globalp2p-dark.jpg" 
+  alt="Global P2P quickstart hero"
+  className="page-hero hidden dark:block"
+/>
+
+With Global P2P you can send and receive payments in any supported fiat or crypto currency. This quickstart guides you through a regulated FI sending an individual customer payment from the US to a bank account in Mexico using USDC just-in-time funding. For examples of funding with real-time fiat rails, see the [Sending Payments](/global-p2p/sending-receiving-payments/sending-payments) guide.
+
+## Understanding Entity Mapping for Remittances
+
+In this guide, the entities map as follows:
+
+| Entity Type | Who They Are | In This Example |
+|------------|--------------|----------------|
+| **Platform** | Your remittance service | Your money transfer app |
+| **Customer** | Both sender and recipient | Alice (sender in US), Carlos (recipient in Mexico) |
+| **External Account** | Bank accounts for funding/receiving | Alice's US bank (funding), Carlos's Mexican bank (receiving funds) |
+
+**Flow**: Alice (customer) funds a transfer from her external account → to Carlos (also a customer) → who receives funds in his external bank account. Alternatively, Alice could send directly to Carlos's UMA address if he has one.
+
+## Get API credentials
+  Create Sandbox API credentials in the [dashboard](https://app.lightspark.com), then set environment variables for local use.
+
+  ```bash
+  export GRID_BASE_URL="https://api.lightspark.com/grid/2025-10-13"
+  export GRID_CLIENT_ID="YOUR_SANDBOX_CLIENT_ID"
+  export GRID_CLIENT_SECRET="YOUR_SANDBOX_CLIENT_SECRET"
+  ```
+
+  <Tip>
+  Use Basic Auth in cURL with `-u "$GRID_CLIENT_ID:$GRID_CLIENT_SECRET"`.
+  </Tip>
+## Create a customer
+  Register a customer who will send the payment. You can provide your own UMA handle or let the system generate one.
+
+  ```bash
+  curl -sS -X POST "https://api.lightspark.com/grid/2025-10-13/customers" \
+    -u "$GRID_CLIENT_ID:$GRID_CLIENT_SECRET" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "platformCustomerId": "cust_7b3c5a89d2f1e0",
+      "customerType": "INDIVIDUAL",
+      "umaAddress": "$alice@yourapp.example",
+      "fullName": "Alice Smith",
+      "address": {
+        "line1": "123 Pine Street",
+        "city": "Seattle",
+        "state": "WA",
+        "postalCode": "98101",
+        "country": "US"
+      }
+    }'
+  ```
+  
+  Response:
+  ```json
+  {
+    "id": "Customer:019542f5-b3e7-1d02-0000-000000000001",
+    "customerType": "INDIVIDUAL",
+    "umaAddress": "$alice@yourapp.example",
+    "platformCustomerId": "cust_7b3c5a89d2f1e0"
+  }
+  ```
+## Create an external receiving bank account (CLABE in MX)
+  Add a beneficiary account in Mexico using their CLABE. We attach it to the same customer for this example.
+
+  ```bash
+  curl -sS -X POST "https://api.lightspark.com/grid/2025-10-13/customers/external-accounts" \
+    -u "$GRID_CLIENT_ID:$GRID_CLIENT_SECRET" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "currency": "MXN",
+      "platformAccountId": "mx_beneficiary_001",
+      "customerId": "Customer:019542f5-b3e7-1d02-0000-000000000001",
+      "accountInfo": {
+        "accountType": "CLABE",
+        "clabeNumber": "123456789012345678",
+        "bankName": "BBVA Mexico",
+        "beneficiary": {
+          "beneficiaryType": "INDIVIDUAL",
+          "fullName": "Carlos Pérez",
+          "birthDate": "1985-03-15",
+          "nationality": "MX",
+          "address": {
+            "line1": "Av. Reforma 123",
+            "city": "Ciudad de México",
+            "state": "CDMX",
+            "postalCode": "06600",
+            "country": "MX"
+          }
+        }
+      }
+    }'
+  ```
+  
+  Response:
+  ```json
+  {
+    "id": "ExternalAccount:a12dcbd6-dced-4ec4-b756-3c3a9ea3d123",
+    "customerId": "Customer:019542f5-b3e7-1d02-0000-000000000001",
+    "currency": "MXN",
+    "status": "ACTIVE",
+    "platformAccountId": "mx_beneficiary_001",
+    "accountInfo": {
+      "accountType": "CLABE",
+      "clabeNumber": "123456789012345678",
+      "bankName": "BBVA Mexico",
+      "beneficiary": {
+        "beneficiaryType": "INDIVIDUAL",
+        "fullName": "Carlos Pérez",
+        "birthDate": "1985-03-15",
+        "nationality": "MX",
+        "address": {
+          "line1": "Av. Reforma 123",
+          "city": "Ciudad de México",
+          "state": "CDMX",
+          "postalCode": "06600",
+          "country": "MX"
+        }
+      }
+    }
+  }
+  ```
+## Create a quote (just‑in‑time funding)
+  Quote a transfer of 100 USD from the customer to the MXN CLABE account. The quote returns the exchange rate, fees, and `paymentInstructions` to fund in real time.
+
+  ```bash
+  curl -sS -X POST "https://api.lightspark.com/grid/2025-10-13/quotes" \
+    -u "$GRID_CLIENT_ID:$GRID_CLIENT_SECRET" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "source": {
+        "sourceType": "REALTIME_FUNDING",
+        "customerId": "Customer:019542f5-b3e7-1d02-0000-000000000001",
+        "currency": "USDC"
+      },
+      "destination": {
+        "destinationType": "ACCOUNT",
+        "accountId": "ExternalAccount:a12dcbd6-dced-4ec4-b756-3c3a9ea3d123"
+      },
+      "lockedCurrencySide": "SENDING",
+      "lockedCurrencyAmount": 10000,
+      "description": "Remittance to MX beneficiary"
+    }'
+  ```
+  
+  Response:
+  ```json
+  {
+    "id": "Quote:019542f5-b3e7-1d02-0000-000000000006",
+    "status": "PENDING",
+    "source": {
+      "sourceType": "REALTIME_FUNDING",
+      "customerId": "Customer:019542f5-b3e7-1d02-0000-000000000001",
+      "currency": "USDC"
+    },
+    "destination": {
+      "destinationType": "ACCOUNT",
+      "accountId": "ExternalAccount:a12dcbd6-dced-4ec4-b756-3c3a9ea3d123"
+    },
+    "sendingCurrency": { "code": "USDC", "name": "USD Coin", "symbol": "USDC", "decimals": 2 },
+    "receivingCurrency": { "code": "MXN", "name": "Mexican Peso", "symbol": "$", "decimals": 2 },
+    "totalSendingAmount": 10000,
+    "totalReceivingAmount": 168500,
+    "exchangeRate": 16.85,
+    "feesIncluded": 50,
+    "paymentInstructions": [
+      {
+          "accountOrWalletInfo": {
+              "accountType": "SOLANA_WALLET",
+              "address": "0x1234567890123456789012345678901234567890",
+              "assetType": "USDC"
+          }
+      },
+      {
+          "accountOrWalletInfo": {
+              "accountType": "BASE_WALLET",
+              "address": "0x1234567890123456789012345678901234567890",
+              "assetType": "USDC"
+          }
+      }
+    ]
+  }
+  ```
+## Fund the quote (Sandbox simulation)
+  In production, you would trigger a payment on one of the supported blockchains to the provided address. In Sandbox, you can mock funding using the simulate send endpoint.
+
+  ```bash
+  curl -sS -X POST "https://api.lightspark.com/grid/2025-10-13/sandbox/send" \
+    -u "$GRID_CLIENT_ID:$GRID_CLIENT_SECRET" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "quoteId": "Quote:019542f5-b3e7-1d02-0000-000000000006",
+      "currencyCode": "USDC"
+    }'
+  ```
+  
+  Response:
+  ```json
+  {
+    "id": "Transaction:019542f5-b3e7-1d02-0000-000000000005",
+    "status": "PROCESSING",
+    "type": "OUTGOING",
+    "customerId": "Customer:019542f5-b3e7-1d02-0000-000000000001",
+    "platformCustomerId": "alice_user_id",
+    "source": {
+      "sourceType": "REALTIME_FUNDING",
+      "customerId": "Customer:019542f5-b3e7-1d02-0000-000000000001",
+      "currency": "USDC"
+    },
+    "destination": {
+      "destinationType": "ACCOUNT",
+      "accountId": "ExternalAccount:a12dcbd6-dced-4ec4-b756-3c3a9ea3d123"
+    },
+    "sentAmount": { "amount": 10000, "currency": { "code": "USDC", "decimals": 2 } },
+    "receivedAmount": { "amount": 168500, "currency": { "code": "MXN", "decimals": 2 } },
+    "quoteId": "Quote:019542f5-b3e7-1d02-0000-000000000006"
+  }
+  ```
+## Handle the outgoing payment webhook
+  Implement a webhook endpoint to receive status updates as the payment moves from pending to completed (or failed). Verify the `X-Grid-Signature` header using the public key provided during onboarding.
+
+  Webhook event:
+  ```json
+  {
+    "id": "Webhook:019542f5-b3e7-1d02-0000-000000000007",
+    "type": "OUTGOING_PAYMENT.COMPLETED",
+    "timestamp": "2025-01-15T14:32:00Z",
+    "data": {
+      "id": "Transaction:019542f5-b3e7-1d02-0000-000000000005",
+      "status": "COMPLETED",
+      "type": "OUTGOING",
+      "sentAmount": { "amount": 10000, "currency": { "code": "USDC", "decimals": 2 } },
+      "receivedAmount": { "amount": 168500, "currency": { "code": "MXN", "decimals": 2 } },
+      "customerId": "Customer:019542f5-b3e7-1d02-0000-000000000001",
+      "quoteId": "Quote:019542f5-b3e7-1d02-0000-000000000006"
+    }
+  }
+  ```
+
